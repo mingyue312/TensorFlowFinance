@@ -8,10 +8,23 @@ import numpy as np
 import sys
 import math
 
-# Define some macros
-TRAINING_SET_RATIO = 0.8
-NORMALIZATION = 1000000.0
 
+
+flags = tf.app.flags
+FLAGS = flags.FLAGS
+flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
+flags.DEFINE_integer('max_steps', 30000, 'Number of steps to run trainer.')
+flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
+flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
+flags.DEFINE_integer('output_classes', 1, 'Number of possible classifications')
+flags.DEFINE_integer('batch_size', 100, 'Batch size.  '
+                     'Must divide evenly into the dataset sizes.')
+flags.DEFINE_string('train_dir', 'data', 'Directory to put the training data.')
+flags.DEFINE_boolean('fake_data', False, 'If true, uses fake data '
+                     'for unit testing.')
+
+TRAINING_SET_RATIO  = 0.8
+NORMALIZATION       = 1000000.0
 
 def fetch_financial_data(company_code, start_date):
     """
@@ -196,6 +209,32 @@ def evaluation(logits, classes):
     return accuracy
 
 
+def do_eval(sess, eval_op, features_pl, classes_pl, features_data, classes_data):
+    """ Runs evaluation against other data (validation/test)
+
+    Args:
+        sess: session to run it
+        eval_op: evaluation comparison tensor
+        features_pl: features input placeholder
+        classes_pl: classes input placeholder
+        features_data: features input
+        classes_data: classes input
+    """
+    feed_dict = {
+        features_pl : features_data.values,
+        classes_pl  : classes_data.values.reshape(len(classes_data.values), 1)
+    }
+
+    num_examples = len(classes_data)
+    num_positive = sess.run(eval_op, feed_dict=feed_dict)
+
+    precision = num_positive / num_examples
+
+    print('  Num examples: %d, num postive: %d precision = [%.4f]' % (num_examples, num_positive, precision))
+
+    tf.scalar_summary('Validation', precision)
+
+
 # training_test_data = data.DataReader('AAPL', 'yahoo', '2014-07-01')
 training_test_data = fetch_financial_data('AAPL', datetime.date(2014, 7, 1))
 
@@ -205,7 +244,6 @@ features_tf, classes_tf = process_training_data(training_test_data)
 # divide the training set into training and testing
 tf_training_features, tf_validation_features = divide_training_set(features_tf)
 tf_training_classes, tf_validation_classes = divide_training_set(classes_tf)
-
 
 # define weight matrices and assign some random values to it
 # for now, use a 1 hidden layer neural network
@@ -218,18 +256,6 @@ HIDDEN_1_SIZE       = 30
 HIDDEN_2_SIZE       = 10
 CLASS_SIZE          = 1
 
-flags = tf.app.flags
-FLAGS = flags.FLAGS
-flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
-flags.DEFINE_integer('max_steps', 30000, 'Number of steps to run trainer.')
-flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
-flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
-flags.DEFINE_integer('output_classes', 1, 'Number of possible classifications')
-flags.DEFINE_integer('batch_size', 100, 'Batch size.  '
-                     'Must divide evenly into the dataset sizes.')
-flags.DEFINE_string('train_dir', 'data', 'Directory to put the training data.')
-flags.DEFINE_boolean('fake_data', False, 'If true, uses fake data '
-                     'for unit testing.')
 
 
 
@@ -239,11 +265,6 @@ with tf.Graph().as_default():
     feature_data_pl = tf.placeholder("float", [None, FEATURE_SIZE])
     actual_classes_pl = tf.placeholder("float", [None, CLASS_SIZE])
 
-    # setup the feeding
-    feed_dict = {
-        feature_data_pl: tf_training_features.values,
-        actual_classes_pl: tf_training_classes.values.reshape(len(tf_training_classes.values), 1)
-    }
 
     # make tf session
     sess = tf.Session()
@@ -277,6 +298,11 @@ with tf.Graph().as_default():
     sess.run(init)
 
     for i in range(FLAGS.max_steps):
+        # setup the feeding
+        feed_dict = {
+            feature_data_pl: tf_training_features.values,
+            actual_classes_pl: tf_training_classes.values.reshape(len(tf_training_classes.values), 1)
+        }
         _, cost_value = \
             sess.run(
             [train_op, cost],
@@ -284,11 +310,11 @@ with tf.Graph().as_default():
         )
 
         if i%500 == 0:
+            do_eval(sess, eval_op, feature_data_pl, actual_classes_pl, tf_validation_features, tf_validation_classes)
+
             print('Step: %d, cost = [%.4f]' % (i, cost_value))
             summary_str = sess.run(summary_op, feed_dict=feed_dict)
             summary_writer.add_summary(summary_str, i)
             summary_writer.flush()
 
 sys.exit(0)
-
-

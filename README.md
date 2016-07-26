@@ -12,7 +12,7 @@
 |     Optimization     | Gradient Descent |
 |     Learning rate    |       0.005      |
 |      Iterations      |      110000      |
-|    Final accuracy    |       ~80%       |
+|    Final accuracy    |       80%        |
 
 
 ### 20160725 v1.1
