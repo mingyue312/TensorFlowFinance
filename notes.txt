@@ -1,6 +1,0 @@
-Tensorflow notes:
-	Softmax: to assign probabilities to an object being one of several different things
-
-
-Traffic control questions:
-	Should consider yellow light? How long will one action last at least? (if longer than duration of yellow light then we are good.)
