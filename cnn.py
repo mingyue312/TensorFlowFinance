@@ -13,7 +13,8 @@ import math
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
-flags.DEFINE_integer('max_steps', 30000, 'Number of steps to run trainer.')
+flags.DEFINE_integer('max_steps', 3000, 'Number of steps to run trainer.')  # changed for SGD, used to be 30000
+flags.DEFINE_integer('feed_size', 100, 'Number of training examples to feed at each step.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('output_classes', 1, 'Number of possible classifications')
@@ -77,17 +78,17 @@ def process_training_data(training_data):
     return [training_data[training_data.columns[:-1]], training_data[training_data.columns[-1]]]
 
 
-def divide_training_set(training_set):
+def divide_training_set(training_set, ratio):
     """
     Divides the training set into training and cross validation, according to TRAINING_SET_RATIO
     Args:
         training_set: The training set, can be either feature set or classification set
-
+        ratio: the ratio to divide
     Returns:
         Training sets and validation sets: both are dataframe type
 
     """
-    training_set_size = int(len(training_test_data) * TRAINING_SET_RATIO)
+    training_set_size = int(len(training_test_data) * ratio)
 
     return [training_set[:training_set_size], training_set[training_set_size:]]
 
@@ -236,14 +237,14 @@ def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, c
 
 
 # training_test_data = data.DataReader('AAPL', 'yahoo', '2014-07-01')
-training_test_data = fetch_financial_data('AAPL', datetime.date(2014, 7, 1))
+training_test_data = fetch_financial_data('AAPL', datetime.date(2012, 7, 1))
 
 # Split the data into x_i and y, in other words, features and results
 features_tf, classes_tf = process_training_data(training_test_data)
 
 # divide the training set into training and testing
-tf_training_features, tf_validation_features = divide_training_set(features_tf)
-tf_training_classes, tf_validation_classes = divide_training_set(classes_tf)
+tf_training_features, tf_validation_features = divide_training_set(features_tf, TRAINING_SET_RATIO)
+tf_training_classes, tf_validation_classes = divide_training_set(classes_tf, TRAINING_SET_RATIO)
 
 # define weight matrices and assign some random values to it
 # for now, use a 1 hidden layer neural network
@@ -294,31 +295,48 @@ with tf.Graph().as_default():
 
     sess.run(init)
 
-    for i in range(FLAGS.max_steps):
-        # setup the feeding
-        feed_dict = {
-            feature_data_pl: tf_training_features.values,
-            actual_classes_pl: tf_training_classes.values.reshape(len(tf_training_classes.values), 1)
-        }
-        _, cost_value = \
-            sess.run(
-            [train_op, cost],
-            feed_dict=feed_dict
-        )
-
-        if i%500 == 0:
-            # do_eval(sess, eval_op, feature_data_pl, actual_classes_pl, tf_validation_features, tf_validation_classes)
-            accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
-
-            validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_features, \
-                                          tf_validation_classes)
-
-            print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
-                  (i, cost_value, accuracy, validation_accuracy))
-
-            summary_str = sess.run(summary_op, feed_dict=feed_dict)
-            summary_writer.add_summary(summary_str, i)
-            summary_writer.flush()
+    # set up the stochostic gradient descent
+    # it's only for the training only
+    num_steps = len(tf_training_features) // FLAGS.feed_size + 1
 
 
+    for step in range(num_steps):
+        for i in range(FLAGS.max_steps):
 
+            # setup the feeding, from step * feed_size to (step+1) * feed_size - 1, i.e. 0 to 99, 100 to 199
+            start_index = step * FLAGS.feed_size
+            end_index = start_index + FLAGS.feed_size - 1
+
+            if step == (num_steps - 1):
+                # at the last iteration, accommodate the last batch
+                feed_features = tf_training_features[start_index:]
+                feed_classes = tf_training_classes[start_index:]
+            else:
+                feed_features = tf_training_features[start_index: end_index]
+                feed_classes = tf_training_classes[start_index: end_index]
+
+            feed_dict = {
+                feature_data_pl: feed_features.values,
+                actual_classes_pl: feed_classes.values.reshape(len(feed_classes.values), 1)
+            }
+
+            # start training process
+            _, cost_value = \
+                sess.run(
+                [train_op, cost],
+                feed_dict=feed_dict
+            )
+
+            if i%500 == 0:
+                accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
+
+                validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_features, \
+                                              tf_validation_classes)
+
+
+                print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
+                      (i, cost_value, accuracy, validation_accuracy))
+
+                summary_str = sess.run(summary_op, feed_dict=feed_dict)
+                summary_writer.add_summary(summary_str, i)
+                summary_writer.flush()
