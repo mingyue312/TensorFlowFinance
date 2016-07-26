@@ -209,7 +209,7 @@ def evaluation(logits, classes):
     return accuracy
 
 
-def do_eval(sess, eval_op, features_pl, classes_pl, features_data, classes_data):
+def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, classes_data):
     """ Runs evaluation against other data (validation/test)
 
     Args:
@@ -220,19 +220,19 @@ def do_eval(sess, eval_op, features_pl, classes_pl, features_data, classes_data)
         features_data: features input
         classes_data: classes input
     """
+
     feed_dict = {
-        features_pl : features_data.values,
-        classes_pl  : classes_data.values.reshape(len(classes_data.values), 1)
+        features_pl: features_data.values,
+        classes_pl: classes_data.values.reshape(len(classes_data.values), 1)
     }
 
-    num_examples = len(classes_data)
-    num_positive = sess.run(eval_op, feed_dict=feed_dict)
+    precision = sess.run(eval_op, feed_dict=feed_dict) * 100
 
-    precision = num_positive / num_examples
-
-    print('  Num examples: %d, num postive: %d precision = [%.4f]' % (num_examples, num_positive, precision))
+    sess.run(summary_op, feed_dict=feed_dict)
 
     tf.scalar_summary('Validation', precision)
+
+    return precision
 
 
 # training_test_data = data.DataReader('AAPL', 'yahoo', '2014-07-01')
@@ -255,9 +255,6 @@ FEATURE_SIZE        = len(tf_training_features.columns)
 HIDDEN_1_SIZE       = 30
 HIDDEN_2_SIZE       = 10
 CLASS_SIZE          = 1
-
-
-
 
 with tf.Graph().as_default():
     # placeholders for feeding data
@@ -310,11 +307,18 @@ with tf.Graph().as_default():
         )
 
         if i%500 == 0:
-            do_eval(sess, eval_op, feature_data_pl, actual_classes_pl, tf_validation_features, tf_validation_classes)
+            # do_eval(sess, eval_op, feature_data_pl, actual_classes_pl, tf_validation_features, tf_validation_classes)
+            accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
 
-            print('Step: %d, cost = [%.4f]' % (i, cost_value))
+            validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_features, \
+                                          tf_validation_classes)
+
+            print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
+                  (i, cost_value, accuracy, validation_accuracy))
+
             summary_str = sess.run(summary_op, feed_dict=feed_dict)
             summary_writer.add_summary(summary_str, i)
             summary_writer.flush()
 
-sys.exit(0)
+
+
