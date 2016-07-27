@@ -14,6 +14,7 @@ import math
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
+flags.DEFINE_float('reg_constant', 0.0001, 'Regularization constant.')
 flags.DEFINE_integer('max_steps', 3000, 'Number of steps to run trainer.')  # changed for SGD, used to be 30000
 flags.DEFINE_integer('feed_size', 100, 'Number of training examples to feed at each step.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
@@ -202,8 +203,10 @@ def cost(logits, classes):
         xentropy = classes*tf.log(tf.clip_by_value(logits, 1e-10, 1)) + \
                    (1-classes)*tf.log(tf.clip_by_value(1-logits, 1e-10, 1))
 
-        cost = -tf.reduce_mean(xentropy, name='xentropy_mean')
-        return cost
+        # collect the regularization term from the graph, not sure how it works TODO: figure out
+        reg_cost = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+        cost_value = -tf.reduce_mean(xentropy, name='xentropy_mean') + FLAGS.reg_constant*sum(reg_cost)
+        return cost_value
 
 
 def training(cost, learning_rate):
