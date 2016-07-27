@@ -148,17 +148,16 @@ def cost(logits, classes):
         cost: cost tensor: float
     """
 
-    classes = tf.to_float(classes)
+    with tf.name_scope('Cost_Function'):
+        classes = tf.to_float(classes)
     
     # use the sigmoid version for now
 
-#    logits = tf.Print(logits, [logits,classes], 'logits/actual')
-    xentropy = classes*tf.log(tf.clip_by_value(logits, 1e-10, 1)) + \
-               (1-classes)*tf.log(tf.clip_by_value(1-logits, 1e-10, 1))
-#    xentropy = tf.Print(xentropy, [xentropy], 'xentropy', summarize=10)
+        xentropy = classes*tf.log(tf.clip_by_value(logits, 1e-10, 1)) + \
+                   (1-classes)*tf.log(tf.clip_by_value(1-logits, 1e-10, 1))
 
-    cost = -tf.reduce_mean(xentropy, name='xentropy_mean')
-    return cost
+        cost = -tf.reduce_mean(xentropy, name='xentropy_mean')
+        return cost
 
 
 def training(cost, learning_rate):
@@ -177,16 +176,18 @@ def training(cost, learning_rate):
     Returns:
         train_op: training op
     """
-    tf.scalar_summary('Mean cost', cost)
+    with tf.name_scope('Training'):
 
-    # create gradient descent optimizer
-    optimizer = tf.train.AdamOptimizer(learning_rate)
+        tf.scalar_summary('Mean cost', cost, name='Cost_summary')
 
-    # create global step variable to track global step: TODO
-    global_step = tf.Variable(0, name='global_step', trainable=False)
+        # create gradient descent optimizer
+        optimizer = tf.train.AdamOptimizer(learning_rate, name='Optimizer')
 
-    train_op = optimizer.minimize(cost, global_step=global_step)
-    return train_op
+        # create global step variable to track global step: TODO
+        global_step = tf.Variable(0, name='global_step', trainable=False)
+
+        train_op = optimizer.minimize(cost, global_step=global_step, name='Train_OP')
+        return train_op
 
 
 def evaluation(logits, classes):
@@ -202,12 +203,12 @@ def evaluation(logits, classes):
         A scalar int32 tensor with the number of examples (out of batch_size)
         that were predicted correctly.
     """
+    with tf.name_scope('Evaluation'):
+        correct_prediction = tf.equal(tf.round(logits), classes, name='Equal')
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='Mean')
 
-    correct_prediction = tf.equal(tf.round(logits), classes)
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-
-    tf.scalar_summary('Accuracy', accuracy)
-    return accuracy
+        tf.scalar_summary('Accuracy', accuracy, name='Accuracy_summary')
+        return accuracy
 
 
 def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, classes_data):
@@ -260,8 +261,8 @@ CLASS_SIZE          = 1
 with tf.Graph().as_default():
     # placeholders for feeding data
     # feature data size: BATCH_SIZE * num_predictors
-    feature_data_pl = tf.placeholder("float", [None, FEATURE_SIZE])
-    actual_classes_pl = tf.placeholder("float", [None, CLASS_SIZE])
+    feature_data_pl = tf.placeholder("float", [None, FEATURE_SIZE], name='Features_PL')
+    actual_classes_pl = tf.placeholder("float", [None, CLASS_SIZE], name='Classes_PL')
 
 
     # make tf session
