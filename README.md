@@ -1,3 +1,16 @@
+### Improvements of V2:
+
+Possible additional classification
+- Predict the percentage of rise/fall
+
+Possible additional features:
+
+- NYSE/NASDAQ(or SP500)kind of reference on that day or days before
+    - possibly, use the reference for a kind of stocks, like technology
+- The performance prior to the day (2~3 days)
+- Quadratic terms
+- Other stock performance - in the same category
+
 ### 20160722 v1
 
 |        Feature       |      Figure      |
@@ -30,3 +43,8 @@
 |     Learning rate    |  0.0001 |
 |      Iterations      |  30000  |
 |    Final accuracy    |   85%   |
+
+### 20160726 Commit 1ddd432
+- Need to fine tune the stochastic training
+
+
