@@ -15,7 +15,7 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
 flags.DEFINE_float('reg_constant', 0.0001, 'Regularization constant.')
-flags.DEFINE_integer('max_steps', 3000, 'Number of steps to run trainer.')  # changed for SGD, used to be 30000
+flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')  # changed for SGD, used to be 30000
 flags.DEFINE_integer('feed_size', 100, 'Number of training examples to feed at each step.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
@@ -28,6 +28,8 @@ flags.DEFINE_boolean('fake_data', False, 'If true, uses fake data '
 
 TRAINING_SET_RATIO  = 0.8
 NORMALIZATION       = 1000000.0
+
+LEARNING_RATE = 0.0001
 
 def fetch_financial_data(company_code, start_date):
     """
@@ -113,7 +115,7 @@ def placeholder_input(batch_size=None):
     return [features_pl, classes_pl]
 
 
-def fill_feed_dict(data_set:DataFrame, features_pl, classes_pl):
+def fill_feed_dict(data_set:DataFrame, features_pl, classes_pl, learning_rate_pl):
     """Fills the feed_dict for training the given step.
 
     A feed_dict takes the form of:
@@ -134,7 +136,8 @@ def fill_feed_dict(data_set:DataFrame, features_pl, classes_pl):
 
     feed_dict = {
         features_pl: features.values,
-        classes_pl: classes.values.reshape(len(classes.values), 1)  # transform the row vec into col vec
+        classes_pl: classes.values.reshape(len(classes.values), 1),  # transform the row vec into col vec
+        learning_rate_pl: LEARNING_RATE
     }
 
     return feed_dict
@@ -209,7 +212,7 @@ def cost(logits, classes):
         return cost_value
 
 
-def training(cost, learning_rate):
+def training(cost, learning_rate_pl):
     
     # add scaler summary TODO
     """ Set up training operation
@@ -220,7 +223,7 @@ def training(cost, learning_rate):
 
     Args:
         cost: cost tensor from cost()
-        learning_rate: gradient descent learning rate
+        learning_rate_pl: gradient descent learning rate, a PLACEHOLDER TO BE FED
 
     Returns:
         train_op: training op
@@ -230,7 +233,7 @@ def training(cost, learning_rate):
         tf.scalar_summary('Mean cost', cost, name='Cost_summary')
 
         # create gradient descent optimizer
-        optimizer = tf.train.AdamOptimizer(learning_rate, name='Optimizer')
+        optimizer = tf.train.AdamOptimizer(learning_rate_pl, name='Optimizer')
 
         # create global step variable to track global step: TODO
         global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -245,7 +248,7 @@ def evaluation(logits, classes):
     Note that, we are using sigmoid here, so we'll have to round the result to get correct prediction
     Args:
         logits: Logits tensor, float - [batch_size, NUM_CLASSES].
-        labels: Labels tensor, int32 - [batch_size], with values in the
+        classes: Labels tensor, int32 - [batch_size], with values in the
             range [0, NUM_CLASSES).
 
     Returns:
@@ -260,7 +263,7 @@ def evaluation(logits, classes):
         return accuracy
 
 
-def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, data_set):
+def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, learnin_rate_pl, data_set):
     """ Runs evaluation against other data (validation/test)
 
     Args:
@@ -271,13 +274,13 @@ def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, data_set):
         data_set: features and classes in Panda DataFrame
     """
 
-    feed_dict = fill_feed_dict(data_set, features_pl, classes_pl)
+    feed_dict = fill_feed_dict(data_set, features_pl, classes_pl, learning_rate_pl)
 
     precision = sess.run(eval_op, feed_dict=feed_dict) * 100
 
     sess.run(summary_op, feed_dict=feed_dict)
 
-    tf.scalar_summary('Validation', precision)
+    sess.run(tf.scalar_summary('Validation', precision))
 
     return precision
 
@@ -318,7 +321,8 @@ with tf.Graph().as_default():
     cost = cost(logits, actual_classes_pl)
 
     # training op -> graph
-    train_op = training(cost, FLAGS.learning_rate)
+    learning_rate_pl = tf.placeholder(tf.float32, shape=[], name='learning_rate')
+    train_op = training(cost, learning_rate_pl)
 
     # add op to evaluate result
     eval_op = evaluation(logits, actual_classes_pl)
@@ -340,40 +344,54 @@ with tf.Graph().as_default():
     # set up the stochostic gradient descent
     # it's only for the training only
     num_steps = len(tf_training_set) // FLAGS.feed_size + 1
+    step = 0
 
-    for step in range(num_steps):
-        for i in range(FLAGS.max_steps):
+    for i in range(num_steps * FLAGS.max_steps):
 
-            # setup the feeding, from step * feed_size to (step+1) * feed_size, i.e. 0 : 100, 100 : 200
-            # note that in python, 0:4 means 4 elements from 0, ie. 0,1,2,3
-            start_index = step * FLAGS.feed_size
-            end_index = start_index + FLAGS.feed_size
+        # move to the next training example batch (100 of them) when max_steps is performed on the current batch
+        if i % FLAGS.max_steps == 0:
+            step += 1
 
-            # at the last iteration, accommodate the last batch
-            if step == (num_steps - 1):
-                feeding_set = tf_training_set[start_index:]
-            else:
-                feeding_set = tf_training_set[start_index: end_index]
+        # setup the feeding, from step * feed_size to (step+1) * feed_size, i.e. 0 : 100, 100 : 200
+        # note that in python, 0:4 means 4 elements from 0, ie. 0,1,2,3
+        start_index = step * FLAGS.feed_size
+        end_index = start_index + FLAGS.feed_size
 
-            feed_dict = fill_feed_dict(feeding_set, feature_data_pl, actual_classes_pl)
+        # at the last iteration, accommodate the last batch
+        if step == (num_steps - 1):
+            feeding_set = tf_training_set[start_index:]
+        else:
+            feeding_set = tf_training_set[start_index: end_index]
 
-            # start training process
-            _, cost_value = \
-                sess.run(
+        feed_dict = fill_feed_dict(feeding_set, feature_data_pl, actual_classes_pl, learning_rate_pl)
+
+        # start training process
+        _, cost_value = \
+            sess.run(
                 [train_op, cost],
                 feed_dict=feed_dict
             )
 
-            if i%1000 == 0:
-                # accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
+        if cost_value < 0.2:
+            LEARNING_RATE = 0.000008
+        elif cost_value < 0.25:
+            LEARNING_RATE = 0.00002
+        elif cost_value < 0.4:
+            LEARNING_RATE = 0.0001
+        else:
+            LEARNING_RATE = 0.0002
 
-                accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_training_set)
-                validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_set)
+        if i%1000 == 0:
+            # accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
+
+            accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, learning_rate_pl, tf_training_set)
+            validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, learning_rate_pl, \
+                                          tf_validation_set)
 
 
-                print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
-                      (i, cost_value, accuracy, validation_accuracy))
+            print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
+                  (i, cost_value, accuracy, validation_accuracy))
 
-                summary_str = sess.run(summary_op, feed_dict=feed_dict)
-                summary_writer.add_summary(summary_str, i)
-                summary_writer.flush()
+            summary_str = sess.run(summary_op, feed_dict=feed_dict)
+            summary_writer.add_summary(summary_str, i)
+            summary_writer.flush()
