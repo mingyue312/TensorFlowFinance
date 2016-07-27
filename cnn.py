@@ -1,6 +1,7 @@
 from yahoo_finance import Share
 from pprint import pprint
 from pandas_datareader import data
+from pandas import DataFrame
 import pandas as pd
 import datetime
 import tensorflow as tf
@@ -91,6 +92,51 @@ def divide_training_set(training_set, ratio):
     training_set_size = int(len(training_test_data) * ratio)
 
     return [training_set[:training_set_size], training_set[training_set_size:]]
+
+
+def placeholder_input(batch_size=FLAGS.feed_size):
+    """ Generate placeholders to represent input tensor
+
+    Args:
+        batch_size: the size of each step, the placeholders will be initialized to batch_size * feature_size and
+                    batch_size * classes size
+
+    Returns:
+        features_pl: placeholder for features training data
+        classes_pl : placeholder for classes  training data
+
+    """
+    features_pl = tf.placeholder(tf.float32, [batch_size, FEATURE_SIZE], name='Features')
+    classes_pl  = tf.placeholder(tf.float32, [batch_size, CLASS_SIZE], name='Classes')
+
+    return [features_pl, classes_pl]
+
+
+def fill_feed_dict(data_set:DataFrame, features_pl, classes_pl):
+    """Fills the feed_dict for training the given step.
+
+    A feed_dict takes the form of:
+    feed_dict = {
+        <placeholder>: <tensor of values to be passed for placeholder>,
+        ....
+    }
+
+    Args:
+        data_set: The set of features and classes, in Panda DataFrame format
+        features_pl: the features placeholder, from placeholder_input()
+        classes_pl: the class es placeholder, from placeholder_input()
+    Returns:
+        feed_dict: The feed dictionary mapping from placeholders to values.
+    """
+    features = data_set[data_set.columns[:-1]]
+    classes = data_set[data_set.columns[-1]]
+
+    feed_dict = {
+        features_pl: features.values,
+        classes_pl: classes.values.reshape(len(classes.values), 1)  # transform the row vec into col vec
+    }
+
+    return feed_dict
 
 ############################################################################
 ## Training mathods
@@ -328,7 +374,7 @@ with tf.Graph().as_default():
                 feed_dict=feed_dict
             )
 
-            if i%500 == 0:
+            if i%1000 == 0:
                 accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
 
                 validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_features, \
