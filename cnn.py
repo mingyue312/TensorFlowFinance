@@ -76,7 +76,7 @@ def process_training_data(training_data):
     training_data = training_data.drop('Close', 1)
     training_data = training_data.drop('Adj Close', 1)
 
-    return [training_data[training_data.columns[:-1]], training_data[training_data.columns[-1]]]
+    return training_data
 
 
 def divide_training_set(training_set, ratio):
@@ -94,7 +94,7 @@ def divide_training_set(training_set, ratio):
     return [training_set[:training_set_size], training_set[training_set_size:]]
 
 
-def placeholder_input(batch_size=FLAGS.feed_size):
+def placeholder_input(batch_size=None):
     """ Generate placeholders to represent input tensor
 
     Args:
@@ -257,7 +257,7 @@ def evaluation(logits, classes):
         return accuracy
 
 
-def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, classes_data):
+def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, data_set):
     """ Runs evaluation against other data (validation/test)
 
     Args:
@@ -265,14 +265,10 @@ def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, c
         eval_op: evaluation comparison tensor
         features_pl: features input placeholder
         classes_pl: classes input placeholder
-        features_data: features input
-        classes_data: classes input
+        data_set: features and classes in Panda DataFrame
     """
 
-    feed_dict = {
-        features_pl: features_data.values,
-        classes_pl: classes_data.values.reshape(len(classes_data.values), 1)
-    }
+    feed_dict = fill_feed_dict(data_set, features_pl, classes_pl)
 
     precision = sess.run(eval_op, feed_dict=feed_dict) * 100
 
@@ -287,29 +283,25 @@ def do_eval(sess, eval_op, summary_op, features_pl, classes_pl, features_data, c
 training_test_data = fetch_financial_data('AAPL', datetime.date(2012, 7, 1))
 
 # Split the data into x_i and y, in other words, features and results
-features_tf, classes_tf = process_training_data(training_test_data)
+data_set = process_training_data(training_test_data)
 
 # divide the training set into training and testing
-tf_training_features, tf_validation_features = divide_training_set(features_tf, TRAINING_SET_RATIO)
-tf_training_classes, tf_validation_classes = divide_training_set(classes_tf, TRAINING_SET_RATIO)
+tf_training_set, tf_validation_set = divide_training_set(data_set, TRAINING_SET_RATIO)
 
 # define weight matrices and assign some random values to it
 # for now, use a 1 hidden layer neural network
 # Input batch size  : 200 , TODO: now is whatever the input size is
 # hidden 1 units    : 50 , mapping size 50*200 + bias
 # output units      : 1  , mapping size  1* 50 + bias
-INPUT_BATCH_SIZE    = len(tf_training_features)
-FEATURE_SIZE        = len(tf_training_features.columns)
+INPUT_BATCH_SIZE    = len(tf_training_set)
+FEATURE_SIZE        = len(tf_training_set.columns) - 1  # the data_set contains both features and classes
 HIDDEN_1_SIZE       = 30
 HIDDEN_2_SIZE       = 10
 CLASS_SIZE          = 1
 
 with tf.Graph().as_default():
     # placeholders for feeding data
-    # feature data size: BATCH_SIZE * num_predictors
-    feature_data_pl = tf.placeholder("float", [None, FEATURE_SIZE], name='Features_PL')
-    actual_classes_pl = tf.placeholder("float", [None, CLASS_SIZE], name='Classes_PL')
-
+    feature_data_pl, actual_classes_pl = placeholder_input()
 
     # make tf session
     sess = tf.Session()
@@ -344,28 +336,23 @@ with tf.Graph().as_default():
 
     # set up the stochostic gradient descent
     # it's only for the training only
-    num_steps = len(tf_training_features) // FLAGS.feed_size + 1
-
+    num_steps = len(tf_training_set) // FLAGS.feed_size + 1
 
     for step in range(num_steps):
         for i in range(FLAGS.max_steps):
 
-            # setup the feeding, from step * feed_size to (step+1) * feed_size - 1, i.e. 0 to 99, 100 to 199
+            # setup the feeding, from step * feed_size to (step+1) * feed_size, i.e. 0 : 100, 100 : 200
+            # note that in python, 0:4 means 4 elements from 0, ie. 0,1,2,3
             start_index = step * FLAGS.feed_size
-            end_index = start_index + FLAGS.feed_size - 1
+            end_index = start_index + FLAGS.feed_size
 
+            # at the last iteration, accommodate the last batch
             if step == (num_steps - 1):
-                # at the last iteration, accommodate the last batch
-                feed_features = tf_training_features[start_index:]
-                feed_classes = tf_training_classes[start_index:]
+                feeding_set = tf_training_set[start_index:]
             else:
-                feed_features = tf_training_features[start_index: end_index]
-                feed_classes = tf_training_classes[start_index: end_index]
+                feeding_set = tf_training_set[start_index: end_index]
 
-            feed_dict = {
-                feature_data_pl: feed_features.values,
-                actual_classes_pl: feed_classes.values.reshape(len(feed_classes.values), 1)
-            }
+            feed_dict = fill_feed_dict(feeding_set, feature_data_pl, actual_classes_pl)
 
             # start training process
             _, cost_value = \
@@ -375,10 +362,10 @@ with tf.Graph().as_default():
             )
 
             if i%1000 == 0:
-                accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
+                # accuracy = sess.run(eval_op, feed_dict=feed_dict) * 100
 
-                validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_features, \
-                                              tf_validation_classes)
+                accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_training_set)
+                validation_accuracy = do_eval(sess, eval_op, summary_op, feature_data_pl, actual_classes_pl, tf_validation_set)
 
 
                 print('Step: %d, cost = [%.4f], accuracy = [%.2f%%], validation [%.2f%%]' % \
