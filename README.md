@@ -1,3 +1,18 @@
+### Presentation outline
+
+- Data model
+    - Hidden layer -> why 2
+    - Units - 32/16 -> next stage goal
+    - Activation -> sigmoid -> classic + binary
+    - Optimization -> gradient descent
+    - Learning rate -> adaptive -> next stage
+    - Flow diagram
+
+- Result = 84% accuracy + 82% validation accuracy
+    - plot accuracy vs iteration
+    
+    
+
 ### Improvements of V2:
 
 Possible additional classification
@@ -10,6 +25,7 @@ Possible additional features:
 - The performance prior to the day (2~3 days)
 - Quadratic terms
 - Other stock performance - in the same category
+
 
 ### 20160722 v1
 
@@ -29,6 +45,7 @@ Possible additional features:
 
 
 ### 20160725 v1.1
+
 |        Feature       |  Figure |
 |:--------------------:|:-------:|
 |     Hidden layers    |    2    |
